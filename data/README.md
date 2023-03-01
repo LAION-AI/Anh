@@ -15,7 +15,7 @@ This is a list of multilingual chat data that can be used to train a multilingua
 - fr translation of en (there are issues with python code formatting): https://drive.google.com/file/d/1gt1dd6vbWrEQml0gKxiv8tccEGEKr7AN/view?usp=share_link
 - es translation of en (there are issues with python code formatting): https://drive.google.com/file/d/1xG_m46RrUBzOa9cMb47MiLmcHs_pkdEw/view?usp=share_link
 - de translation of en (there are issues with python code formatting): https://drive.google.com/file/d/1pyWlwe7MqpyS7DxLd4yC124skXYtP7Uy/view?usp=share_link
-
+- Human reviewed es: TBD
 - Human reviewed id: TBD
 - Human reviewed th: TBD
 - Human reviewed se: TBD
