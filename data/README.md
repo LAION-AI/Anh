@@ -2,7 +2,7 @@ This is a list of multilingual chat data that can be used to train a multilingua
 
 
 - basic english chat data with safety: https://drive.google.com/file/d/1ABw9utrLHmqnOLWrf_Ffgpgam7fXpK1a/view?usp=sharing
-- xp3 sample converted to ``User: text \n Assistant: text`` format: https://drive.google.com/file/d/1-2tfQAPu646A1gukx0JMSnaRuG7DlG2V/view?usp=sharing
+- xp3 sample converted to ``User: text \nAssistant: text`` format: https://drive.google.com/file/d/1-2tfQAPu646A1gukx0JMSnaRuG7DlG2V/view?usp=sharing
 - cross-lingual: Includes all the translated datasets below as well as cross lingual instructions. Additionally fixes to formatting: https://drive.google.com/file/d/1-71-SM4Oc1rwlQFpJN-0vEtHmDY6mLl5/view?usp=share_link
 - zh translation of en (there are issues with python code formatting): https://drive.google.com/file/d/17w2fRjBlCDmbMxhgSDUhF9RY_QXuiQaA/view?usp=share_link
 - vi translation of en (there are issues with python code formatting): https://drive.google.com/file/d/1fPZw7i-MJKSxnEPrTjduW4iIr08Qeqk-/view?usp=share_link
