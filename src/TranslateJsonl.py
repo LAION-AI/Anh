@@ -3,11 +3,16 @@ import jsonlines
 import torch
 from transformers import pipeline
 from termcolor import colored
-
+model_name = "Helsinki-NLP/opus-mt-en-sv"
+tokenizer = pipeline("translation", model=model_name, device=0 if torch.cuda.is_available() else -1).tokenizer
+translator = pipeline("translation", model=model_name, device=0 if torch.cuda.is_available() else -1)
 def translate_between_languages(text, model_name):
-    translator = pipeline("translation", model=model_name, device=0 if torch.cuda.is_available() else -1)
+
+    # Count the number of tokens in the input text
+    num_tokens = len(tokenizer(text)['input_ids'])
     translated = translator(text, src_lang="en", tgt_lang="sv")
     return translated[0]["translation_text"]
+
 
 
 def translate_english_to_swedish(english_text):
@@ -23,7 +28,13 @@ def translate_jsonl(input_file, output_file, corrupt_lines_file):
         for line in reader:
             text = line['text']
             source = line['meta']['source']
-
+            # Count the number of tokens in the input text
+            num_tokens = len(tokenizer(text)['input_ids'])
+            if num_tokens > tokenizer.model_max_length:
+                print(colored(f"The input text is too long: {num_tokens} tokens (max allowed: ({tokenizer.model_max_length})", "red"))
+                with open(corrupt_lines_file, 'a') as fc:
+                    fc.write(str(line) + "\n")
+                continue
             dialogue_pairs = text.split('User:')
 
             thread = []
