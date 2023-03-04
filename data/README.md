@@ -18,6 +18,6 @@ This is a list of multilingual chat data that can be used to train a multilingua
 - Human reviewed es: TBD
 - Human reviewed id: TBD
 - Human reviewed th: TBD
-- Human reviewed se: TBD
+- Human reviewed se:  https://drive.google.com/file/d/1AcLjIZPMKDJgrTGS276JSYGWiKMED4hi/view?usp=sharing
 - Human reviewed ko: TBD
 - Human reviewed vi: TBD
