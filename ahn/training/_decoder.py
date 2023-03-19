@@ -1,3 +1,4 @@
+import json
 import os
 from concurrent.futures import ThreadPoolExecutor
 
@@ -54,9 +55,29 @@ def tokenize(config, tokenizer, data, data_type):
 
 def get_data_loader(config, tokenizer, data_type):
     if data_type == "train":
-        data = open(config["data"]["train_data_path"]).read().splitlines()
+        raw_data = open(config["data"]["train_data_path"]).read().splitlines()
+        data = []
+        err = 0
+        for i in raw_data:
+            if len(i) > 10:
+                try:
+                    data.append(json.loads(i)[config["data"]["train_data_key"]])
+                except:
+                    err += 1
+        print(f"error train data: {err}")
+
     elif data_type == "valid":
-        data = open(config["data"]["valid_data_path"]).read().splitlines()
+        raw_data = open(config["data"]["valid_data_path"]).read().splitlines()
+        data = []
+        err = 0
+        for i in raw_data:
+            if len(i) > 10:
+                try:
+                    data.append(json.loads(i)[config["data"]["valid_data_key"]])
+                except:
+                    err += 1
+        print(f"error valid data: {err}")
+
     else:
         raise ValueError(f"Invalid data_type: {data_type}")
 
