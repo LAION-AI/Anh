@@ -35,9 +35,9 @@
     },
     "data": {
         # Path to training data.
-        "train_data_path": "/path/to/data/train.txt",
+        "train_data_path": "/path/to/data/train.jsonl",
         # Path to validation data.
-        "valid_data_path": "/path/to/data/valid.txt",
+        "valid_data_path": "/path/to/data/valid.jsonl",
         # Special tokens for the model.
         "special_tokens": ["<|sep|>", "<|bot|>"],
     },
