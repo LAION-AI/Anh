@@ -61,7 +61,7 @@ def get_data_loader(config, tokenizer, data_type):
         for i in raw_data:
             if len(i) > 10:
                 try:
-                    data.append(json.loads(i)["text"])
+                    data.append(json.loads(i)[config["data"]["train_data_key"]])
                 except:
                     err += 1
         print(f"error train data: {err}")
@@ -73,7 +73,7 @@ def get_data_loader(config, tokenizer, data_type):
         for i in raw_data:
             if len(i) > 10:
                 try:
-                    data.append(json.loads(i)["text"])
+                    data.append(json.loads(i)[config["data"]["valid_data_key"]])
                 except:
                     err += 1
         print(f"error valid data: {err}")
