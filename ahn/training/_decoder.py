@@ -57,29 +57,37 @@ def tokenize(config, tokenizer, data, data_type):
 def get_data_loader_hfstyle(config, tokenizer, split):
     accelerator = Accelerator()
     if split == "train":
-        dataset = datasets.load_dataset("json", data_files=config["data"]["train_data_path"], split="all")
+        dataset = datasets.load_dataset(
+            "json", data_files=config["data"]["train_data_path"], split="all"
+        )
     elif split == "valid":
-        dataset = datasets.load_dataset("json", data_files=config["data"]["valid_data_path"], split="all")
+        dataset = datasets.load_dataset(
+            "json", data_files=config["data"]["valid_data_path"], split="all"
+        )
     else:
         raise NotImplementedError(f"split {split} is not implemented")
     if config.get("debug"):
         dataset = dataset.select(range(100))
+
     def process_fn(examples):
         result = tokenizer(
             examples[config["data"]["train_data_key"]],
             padding=False,
-            truncation=False, 
+            truncation=False,
             max_length=config["model_and_tokenizer"]["max_length"],
             return_attention_mask=False,
             return_token_type_ids=False,
         )
         return result
+
     with accelerator.main_process_first():
-        dataset = dataset.map(process_fn, batched=True, batch_size=1000, remove_columns=["metadata"])
+        dataset = dataset.map(
+            process_fn, batched=True, batch_size=1000, remove_columns=["metadata"]
+        )
     if config.get("debug"):
         dataset = dataset.select(range(100))
     dataset = dataset.rename_columns({"input_ids": "tokens", "text": "sentences"})
-    dataset.set_format('pt', columns=['tokens'], output_all_columns=True)
+    dataset.set_format("pt", columns=["tokens"], output_all_columns=True)
 
     def collate_fn(batch):
         _tokens, _sentences = [], []

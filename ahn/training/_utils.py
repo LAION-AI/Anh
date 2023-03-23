@@ -51,7 +51,6 @@ def default_setup_deepspeed():
     torch.cuda.set_device(dist.get_rank())
 
 
-
 def add_tokens(tokenizer, model, tokens):
     tokenizer.add_tokens(tokens)
     model.resize_token_embeddings(len(tokenizer))
@@ -171,6 +170,7 @@ def fuse_gelu_megatron(model):
 def get_timestamp():
     now = datetime.now()
     return now.strftime("%y%m%d-%H%M%S")
+
 
 def print_rank0(msg):
     if dist.get_rank() == 0:

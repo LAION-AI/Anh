@@ -14,7 +14,13 @@ import yaml
 from torch.backends import cudnn, cuda
 from accelerate.logging import get_logger
 from _factory import ModelFactory, TokenizerFactory
-from _utils import default_setup_deepspeed, optimized_params, add_tokens, fuse_gelu_megatron, get_timestamp
+from _utils import (
+    default_setup_deepspeed,
+    optimized_params,
+    add_tokens,
+    fuse_gelu_megatron,
+    get_timestamp,
+)
 from transformers import set_seed
 
 
@@ -79,7 +85,7 @@ def main():
         tokenizer.pad_token = tokenizer.eos_token
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
-        
+
     # 10. Load dataloaders
     logger.info("Loading train data loaders...")
     train_data_loader = get_data_loader_hfstyle(config, tokenizer, "train")
@@ -122,7 +128,11 @@ def main():
             next(train_data_loader)
 
     table_data = []
-    total_step = config["training"]["total_step"] if not config.get("debug") else len(train_data_loader)
+    total_step = (
+        config["training"]["total_step"]
+        if not config.get("debug")
+        else len(train_data_loader)
+    )
     # 16. Start training
     while True:
         if config["training"]["current_step"] >= total_step:
@@ -132,17 +142,26 @@ def main():
             if config["training"]["current_step"] >= total_step:
                 break
             loss = engine(
-                **{k: v.cuda() if torch.is_tensor(v) else v for k, v in train_data.items()}
+                **{
+                    k: v.cuda() if torch.is_tensor(v) else v
+                    for k, v in train_data.items()
+                }
             ).loss
 
-            if i % config["training"]["train_print_every"] == 0 or i == len(train_data_loader) - 1:
+            if (
+                i % config["training"]["train_print_every"] == 0
+                or i == len(train_data_loader) - 1
+            ):
                 logger.info(
                     f"[train] EPOCH: {config['training']['current_step']/len(train_data_loader):.3f} "
                     f"STEP: {i}/{len(train_data_loader) - 1}, LOSS: {loss}"
                 )
             if dist.get_rank() == 0:
                 wandb.log(
-                    data={"train_loss": loss.item(), "train_ppl": math.exp(loss.item())},
+                    data={
+                        "train_loss": loss.item(),
+                        "train_ppl": math.exp(loss.item()),
+                    },
                     step=config["training"]["current_step"],
                 )
 
@@ -150,7 +169,9 @@ def main():
             engine.step()
             torch.cuda.empty_cache()
 
-            if (i + 1) % config["training"]["eval_interval"] == 0 or config["training"]["current_step"] == total_step - 1:
+            if (i + 1) % config["training"]["eval_interval"] == 0 or config["training"][
+                "current_step"
+            ] == total_step - 1:
                 engine.module.eval()
                 logger.info("Start Validation")
 
@@ -184,7 +205,10 @@ def main():
                     )
 
                 generation_output_string = tokenizer.decode(generation_output[0])
-                if j % config["training"]["eval_print_every"] == 0 or j == len(valid_data_loader) - 1:
+                if (
+                    j % config["training"]["eval_print_every"] == 0
+                    or j == len(valid_data_loader) - 1
+                ):
                     logger.info(
                         f"[valid] STEP: {j}/{len(valid_data_loader) - 1}, LOSS: {loss}"
                     )
@@ -223,7 +247,7 @@ def main():
                 # val_loss_tensor /= dist.get_world_size()
 
                 engine.save_checkpoint(
-                    save_dir=os.path.join(config['training']['save_path'], exp_name),
+                    save_dir=os.path.join(config["training"]["save_path"], exp_name),
                 )
             config["training"]["current_step"] += 1
 
