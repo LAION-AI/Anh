@@ -169,7 +169,7 @@ def fuse_gelu_megatron(model):
 
 def get_timestamp():
     now = datetime.now()
-    return now.strftime("%y%m%d-%H%M%S")
+    return now.strftime("%y%m%d-%H%M")
 
 
 def print_rank0(msg):

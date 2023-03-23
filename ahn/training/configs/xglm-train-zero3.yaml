@@ -85,9 +85,9 @@
         # ZeRO optimization related settings.
         "zero_optimization": {
             "stage": 3,
-            # "offload_param": {
-            #     "device": "cpu",
-            # },
+            "offload_param": {
+                "device": "cpu",
+            },
             "offload_optimizer": {
                 "device": "cpu",
             },

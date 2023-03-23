@@ -405,3 +405,4 @@ wandb/
 
 **/hf_cache
 **/logs
+**/result
