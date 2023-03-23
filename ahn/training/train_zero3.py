@@ -229,9 +229,10 @@ def main():
             engine.backward(train_loss)
             engine.step()
 
-            if curr_step > 0 and (curr_step % config["training"][
-                "eval_interval"
-            ] == 0 or curr_step == config["training"]["total_step"] - 1):
+            if curr_step > 0 and (
+                curr_step % config["training"]["eval_interval"] == 0
+                or curr_step == config["training"]["total_step"] - 1
+            ):
                 engine.module.eval()
                 logger.info("Start Validation")
 
@@ -295,9 +296,10 @@ def main():
                         step=curr_step,
                     )
                 engine.module.train()
-            if curr_step > 0 and (curr_step % config["training"][
-                "save_interval"
-            ] == 0 or curr_step == config["training"]["total_step"] - 1):
+            if curr_step > 0 and (
+                curr_step % config["training"]["save_interval"] == 0
+                or curr_step == config["training"]["total_step"] - 1
+            ):
                 dist.barrier()
                 engine.save_checkpoint(
                     save_dir=os.path.join(config["training"]["save_path"], save_dir),
