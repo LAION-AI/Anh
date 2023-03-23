@@ -113,6 +113,8 @@ def main():
     )[0]
 
     # 14. Setup wandb monitoring
+    # this is for time sync
+    dist.barrier()
     exp_name = f'{config["training"]["exp_name"]}-{get_timestamp()}'
     logger.info(f"Experiment name: {exp_name}")
     if dist.get_rank() == 0:
@@ -120,7 +122,6 @@ def main():
             project=config["training"]["project"],
             name=exp_name,
         )
-    dist.barrier()
 
     # 15. Skip training steps if model is already trained
     if config["training"]["current_step"] > 0:
