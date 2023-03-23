@@ -402,3 +402,6 @@ wandb/
 
 # ignore jsonl files
 **/*.jsonl
+
+**/hf_cache
+**/logs
