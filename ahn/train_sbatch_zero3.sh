@@ -20,4 +20,4 @@ export 'PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512'
 # cat /admin/home-ryan01/.netrc > ~/.netrc
 cd /fsx/ryan/project/laion/Anh/ahn/training
 # torchrun --nproc_per_node=8 train.py -c configs/xglm-train.yaml
-deepspeed --num_gpus=8 train_zero3.py -c configs/xglm-train=zero3.yaml
+deepspeed --num_gpus=8 train_zero3.py -c configs/xglm-train-zero3.yaml

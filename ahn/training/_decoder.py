@@ -7,7 +7,6 @@ import torch.distributed as dist
 from catalyst.data import DistributedSamplerWrapper
 from torch.utils.data import Dataset, DataLoader, DistributedSampler
 from tqdm import tqdm
-import torch
 
 from _utils import SmartBatchSampler
 
@@ -95,7 +94,9 @@ def get_data_loader_hfstyle(config, tokenizer, split):
             _tokens.append(sample["tokens"])
             _sentences.append(sample["sentences"])
 
-        enc = tokenizer.pad(encoded_inputs={"input_ids": _tokens}, padding=True)
+        enc = tokenizer.pad(
+            encoded_inputs={"input_ids": _tokens}, padding="longest", verbose=False
+        )
         input_ids = enc.input_ids[:, : config["model_and_tokenizer"]["max_length"]]
         attention_mask = enc.attention_mask[
             :, : config["model_and_tokenizer"]["max_length"]

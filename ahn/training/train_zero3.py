@@ -3,9 +3,9 @@ torchrun --nproc_per_node=8 train.py -c configs/example-230314.yaml
 """
 import os
 import math
+import json
 import random
 from argparse import ArgumentParser
-
 import deepspeed
 import torch
 import torch.distributed as dist
@@ -40,7 +40,7 @@ def main():
     # 3. Load config and set seed
     with open(config_path, "r") as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
-        logger.info(config)
+        logger.info(json.dumps(config, indent=2))
         set_seed(config["training"]["seed"])
 
     # 4. Get data loading and train functions
@@ -49,6 +49,18 @@ def main():
         from _decoder import get_data_loader_hfstyle
     else:
         raise Exception("Unknown model type: {}".format(model_type))
+
+    # use xglm-564M for debug
+    if config.get("debug") and config["debug"] == "small":
+        config["training"]["exp_name"] = "debug_xglm-564M"
+        config["model_and_tokenizer"][
+            "pretrained_tokenizer_name"
+        ] = "facebook/xglm-564M"
+        config["model_and_tokenizer"]["pretrained_model_name"] = "facebook/xglm-564M"
+
+    # sync all processes for the same exp_name
+    dist.barrier()
+    exp_name = f'{config["training"]["exp_name"]}-{get_timestamp()}'
 
     # 5. Load tokenizer
     logger.info("Loading tokenizer...")
@@ -111,11 +123,26 @@ def main():
             config["deepspeed"]["optimizer"]["params"]["weight_decay"],
         ),
     )[0]
+    if config.get("resume_from_checkpoint"):
+        logger.info(f"Try resuming checkpoint from {config['resume_from_checkpoint']}")
+        try:
+            _, client_state = engine.load_checkpoint(
+                config["resume_from_checkpoint"],
+                load_optimizer_states=True,
+                load_lr_scheduler_states=True,
+            )
+            exp_name = config["resume_from_checkpoint"].split("/")[-1]
+            logger.info(f"Resuming exp_name to {exp_name}")
+            if client_state.get("step") and client_state["step"] > 0:
+                config["training"]["current_step"] = client_state["step"]
+                logger.info(
+                    f"Resuming current_step to {config['training']['current_step']}"
+                )
+        except Exception as e:
+            logger.info(f"Failed to load checkpoint with error: {e}")
 
     # 14. Setup wandb monitoring
     # this is for time sync
-    dist.barrier()
-    exp_name = f'{config["training"]["exp_name"]}-{get_timestamp()}'
     logger.info(f"Experiment name: {exp_name}")
     if dist.get_rank() == 0:
         wandb.init(
@@ -129,18 +156,17 @@ def main():
             next(train_data_loader)
 
     table_data = []
-    total_step = (
-        config["training"]["total_step"]
-        if not config.get("debug")
-        else len(train_data_loader)
-    )
+    if config.get("debug"):
+        config["training"]["total_step"] = len(train_data_loader) + 3
+        config["training"]["eval_interval"] = len(train_data_loader)
+
     # 16. Start training
     while True:
-        if config["training"]["current_step"] >= total_step:
+        if config["training"]["current_step"] >= config["training"]["total_step"]:
             break
         engine.module.train()
         for i, train_data in enumerate(train_data_loader):
-            if config["training"]["current_step"] >= total_step:
+            if config["training"]["current_step"] >= config["training"]["total_step"]:
                 break
             loss = engine(
                 **{
@@ -150,12 +176,16 @@ def main():
             ).loss
 
             if (
-                i % config["training"]["train_print_every"] == 0
-                or i == len(train_data_loader) - 1
+                config["training"]["current_step"]
+                % config["training"]["train_print_every"]
+                == 0
+                or config["training"]["current_step"] == len(train_data_loader) - 1
+                or config["training"]["current_step"]
+                == config["training"]["total_step"] - 1
             ):
                 logger.info(
-                    f"[train] EPOCH: {config['training']['current_step']/len(train_data_loader):.3f} "
-                    f"STEP: {i}/{len(train_data_loader) - 1}, LOSS: {loss}"
+                    f"[train] EPOCH: {(config['training']['current_step'] + 1)/len(train_data_loader):.3f} "
+                    f"STEP: {config['training']['current_step'] + 1}/{config['training']['total_step']}, LOSS: {loss}"
                 )
             if dist.get_rank() == 0:
                 wandb.log(
@@ -168,11 +198,10 @@ def main():
 
             engine.backward(loss)
             engine.step()
-            torch.cuda.empty_cache()
 
             if (i + 1) % config["training"]["eval_interval"] == 0 or config["training"][
                 "current_step"
-            ] == total_step - 1:
+            ] == config["training"]["total_step"] - 1:
                 engine.module.eval()
                 logger.info("Start Validation")
 
@@ -247,9 +276,12 @@ def main():
                 # dist.barrier()
                 # val_loss_tensor /= dist.get_world_size()
 
+                dist.barrier()
                 engine.save_checkpoint(
                     save_dir=os.path.join(config["training"]["save_path"], exp_name),
+                    client_state={"step": config["training"]["current_step"]},
                 )
+                torch.cuda.empty_cache()
             config["training"]["current_step"] += 1
 
 
