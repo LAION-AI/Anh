@@ -2,7 +2,7 @@
     "debug": False,
     "training": {
         # project name
-        "project": "laion-instruct",
+        "project": "laion-instruct-xglm-7.5B",
         # experiment name
         "exp_name": "xglm-7.5B",
         # Total number of training steps.

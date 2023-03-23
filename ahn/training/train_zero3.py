@@ -53,7 +53,7 @@ def main():
 
     # use xglm-564M for debug
     if config.get("debug") and config["debug"] == "small":
-        config["training"]["exp_name"] = "debug_xglm-564M"
+        config["training"]["exp_name"] = "xglm-564M"
         config["model_and_tokenizer"][
             "pretrained_tokenizer_name"
         ] = "facebook/xglm-564M"
@@ -62,6 +62,7 @@ def main():
     # sync all processes for the same exp_name
     dist.barrier()
     exp_name = f'{config["training"]["exp_name"]}-{get_timestamp()}'
+    save_dir = exp_name
 
     # 5. Load tokenizer
     logger.info("Loading tokenizer...")
@@ -124,6 +125,8 @@ def main():
             config["deepspeed"]["optimizer"]["params"]["weight_decay"],
         ),
     )[0]
+
+    # 14. Resume from checkpoint if available
     if config["training"].get("resume_from_checkpoint"):
         logger.info(
             f"Try resuming checkpoint from {config['training']['resume_from_checkpoint']}"
@@ -134,8 +137,8 @@ def main():
                 load_optimizer_states=True,
                 load_lr_scheduler_states=True,
             )
-            exp_name = config["training"]["resume_from_checkpoint"].split("/")[-1]
-            logger.info(f"Resuming exp_name to {exp_name}")
+            save_dir = config["training"]["resume_from_checkpoint"].split("/")[-1]
+            logger.info(f"Resuming save_dir to {save_dir}")
             if client_state.get("step") and client_state["step"] > 0:
                 config["training"]["resume_step"] = client_state["step"]
                 logger.info(
@@ -158,7 +161,7 @@ def main():
     else:
         config["training"]["resume_step"] = 0
 
-    # 14. Setup wandb monitoring
+    # 15. Setup wandb monitoring
     # this is for time sync
     logger.info(f"Experiment name: {exp_name}")
     if dist.get_rank() == 0:
@@ -184,8 +187,9 @@ def main():
         config["training"]["eval_interval"],
     )
 
-    # 15. Start training
+    # 16. Start training
     curr_step = 0
+    train_losses = []
     engine.module.train()
     while True:
         if curr_step >= config["training"]["total_step"]:
@@ -200,16 +204,19 @@ def main():
                     for k, v in train_data.items()
                 }
             ).loss
+            train_losses.append(train_loss.item())
 
             if (
                 curr_step % config["training"]["train_print_interval"] == 0
                 or curr_step == len(train_data_loader) - 1
                 or curr_step == config["training"]["total_step"] - 1
             ):
+                avg_train_loss = sum(train_losses) / len(train_losses)
                 logger.info(
                     f"[train] EPOCH: {(curr_step + 1)/len(train_data_loader):.3f} "
-                    f"STEP: {curr_step + 1}/{config['training']['total_step']}, LOSS: {train_loss:.5f}"
+                    f"STEP: {curr_step}/{config['training']['total_step']}, LOSS: {avg_train_loss:.5f}"
                 )
+                train_losses = []
             if dist.get_rank() == 0:
                 wandb.log(
                     data={
@@ -222,9 +229,9 @@ def main():
             engine.backward(train_loss)
             engine.step()
 
-            if (curr_step + 1) % config["training"][
+            if curr_step > 0 and (curr_step % config["training"][
                 "eval_interval"
-            ] == 0 or curr_step == config["training"]["total_step"] - 1:
+            ] == 0 or curr_step == config["training"]["total_step"] - 1):
                 engine.module.eval()
                 logger.info("Start Validation")
 
@@ -239,7 +246,7 @@ def main():
                                 for k, v in valid_data.items()
                             }
                         ).loss
-                        val_losses.append(val_loss.detach().item())
+                        val_losses.append(val_loss.item())
                         if (
                             j % config["training"]["train_print_interval"] == 0
                             or j == len(valid_data_loader) - 1
@@ -288,12 +295,12 @@ def main():
                         step=curr_step,
                     )
                 engine.module.train()
-            if (curr_step + 1) % config["training"][
+            if curr_step > 0 and (curr_step % config["training"][
                 "save_interval"
-            ] == 0 or curr_step == config["training"]["total_step"] - 1:
+            ] == 0 or curr_step == config["training"]["total_step"] - 1):
                 dist.barrier()
                 engine.save_checkpoint(
-                    save_dir=os.path.join(config["training"]["save_path"], exp_name),
+                    save_dir=os.path.join(config["training"]["save_path"], save_dir),
                     client_state={"step": curr_step},
                 )
             curr_step += 1
