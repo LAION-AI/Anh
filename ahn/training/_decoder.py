@@ -66,7 +66,7 @@ def get_data_loader_hfstyle(config, tokenizer, split):
     else:
         raise NotImplementedError(f"split {split} is not implemented")
     if config.get("debug"):
-        dataset = dataset.select(range(100))
+        dataset = dataset.select(range(200))
 
     def process_fn(examples):
         result = tokenizer(

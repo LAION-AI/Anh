@@ -22,6 +22,7 @@ from _utils import (
     get_timestamp,
 )
 from transformers import set_seed
+from deepspeed.accelerator import get_accelerator
 
 
 logger = get_logger(__name__)
@@ -123,23 +124,39 @@ def main():
             config["deepspeed"]["optimizer"]["params"]["weight_decay"],
         ),
     )[0]
-    if config.get("resume_from_checkpoint"):
-        logger.info(f"Try resuming checkpoint from {config['resume_from_checkpoint']}")
+    if config["training"].get("resume_from_checkpoint"):
+        logger.info(
+            f"Try resuming checkpoint from {config['training']['resume_from_checkpoint']}"
+        )
         try:
             _, client_state = engine.load_checkpoint(
-                config["resume_from_checkpoint"],
+                config["training"]["resume_from_checkpoint"],
                 load_optimizer_states=True,
                 load_lr_scheduler_states=True,
             )
-            exp_name = config["resume_from_checkpoint"].split("/")[-1]
+            exp_name = config["training"]["resume_from_checkpoint"].split("/")[-1]
             logger.info(f"Resuming exp_name to {exp_name}")
             if client_state.get("step") and client_state["step"] > 0:
-                config["training"]["current_step"] = client_state["step"]
+                config["training"]["resume_step"] = client_state["step"]
                 logger.info(
-                    f"Resuming current_step to {config['training']['current_step']}"
+                    f"Resuming resume_step to {config['training']['resume_step']}"
+                )
+            else:
+                with open(
+                    os.path.join(
+                        config["training"]["resume_from_checkpoint"], "latest"
+                    ),
+                    "r",
+                ) as f:
+                    resume_step = int(f.readline().strip().replace("global_step", ""))
+                    config["training"]["resume_step"] = resume_step
+                logger.info(
+                    f"Resuming resume_step to {config['training']['resume_step']}"
                 )
         except Exception as e:
-            logger.info(f"Failed to load checkpoint with error: {e}")
+            logger.info(f"Failed to resume checkpoint with error: {e}")
+    else:
+        config["training"]["resume_step"] = 0
 
     # 14. Setup wandb monitoring
     # this is for time sync
@@ -150,25 +167,34 @@ def main():
             name=exp_name,
         )
 
-    # 15. Skip training steps if model is already trained
-    if config["training"]["current_step"] > 0:
-        for _ in range(config["training"]["current_step"]):
-            next(train_data_loader)
-
     table_data = []
     if config.get("debug"):
         config["training"]["total_step"] = len(train_data_loader) + 3
         config["training"]["eval_interval"] = len(train_data_loader)
 
-    # 16. Start training
+    if not config["training"].get("save_interval"):
+        config["training"]["save_interval"] = config["training"]["eval_interval"]
+
+    # make sure save_interval is larger than or equal to eval_interval and make it a multiple of eval_interval
+    config["training"]["save_interval"] = max(
+        config["training"]["eval_interval"]
+        * int(
+            config["training"]["save_interval"] / config["training"]["eval_interval"]
+        ),
+        config["training"]["eval_interval"],
+    )
+
+    # 15. Start training
+    curr_step = 0
+    engine.module.train()
     while True:
-        if config["training"]["current_step"] >= config["training"]["total_step"]:
+        if curr_step >= config["training"]["total_step"]:
             break
-        engine.module.train()
-        for i, train_data in enumerate(train_data_loader):
-            if config["training"]["current_step"] >= config["training"]["total_step"]:
-                break
-            loss = engine(
+        for train_data in train_data_loader:
+            if curr_step <= config["training"]["resume_step"]:
+                curr_step += 1
+                continue
+            train_loss = engine(
                 **{
                     k: v.cuda() if torch.is_tensor(v) else v
                     for k, v in train_data.items()
@@ -176,39 +202,34 @@ def main():
             ).loss
 
             if (
-                config["training"]["current_step"]
-                % config["training"]["train_print_every"]
-                == 0
-                or config["training"]["current_step"] == len(train_data_loader) - 1
-                or config["training"]["current_step"]
-                == config["training"]["total_step"] - 1
+                curr_step % config["training"]["train_print_interval"] == 0
+                or curr_step == len(train_data_loader) - 1
+                or curr_step == config["training"]["total_step"] - 1
             ):
                 logger.info(
-                    f"[train] EPOCH: {(config['training']['current_step'] + 1)/len(train_data_loader):.3f} "
-                    f"STEP: {config['training']['current_step'] + 1}/{config['training']['total_step']}, LOSS: {loss}"
+                    f"[train] EPOCH: {(curr_step + 1)/len(train_data_loader):.3f} "
+                    f"STEP: {curr_step + 1}/{config['training']['total_step']}, LOSS: {train_loss:.5f}"
                 )
             if dist.get_rank() == 0:
                 wandb.log(
                     data={
-                        "train_loss": loss.item(),
-                        "train_ppl": math.exp(loss.item()),
+                        "train_loss": train_loss.item(),
+                        "train_ppl": math.exp(train_loss.item()),
                     },
-                    step=config["training"]["current_step"],
+                    step=curr_step,
                 )
 
-            engine.backward(loss)
+            engine.backward(train_loss)
             engine.step()
 
-            if (i + 1) % config["training"]["eval_interval"] == 0 or config["training"][
-                "current_step"
-            ] == config["training"]["total_step"] - 1:
+            if (curr_step + 1) % config["training"][
+                "eval_interval"
+            ] == 0 or curr_step == config["training"]["total_step"] - 1:
                 engine.module.eval()
                 logger.info("Start Validation")
 
+                val_losses, val_samples = [], []
                 with torch.no_grad():
-                    val_losses = []
-                    val_samples = []
-
                     for j, valid_data in enumerate(valid_data_loader):
                         random_valid_sample = random.choice(valid_data["input_ids"])
                         val_samples.append(random_valid_sample)
@@ -219,7 +240,13 @@ def main():
                             }
                         ).loss
                         val_losses.append(val_loss.detach().item())
-                    val_loss = sum(val_losses) / len(val_losses)
+                        if (
+                            j % config["training"]["train_print_interval"] == 0
+                            or j == len(valid_data_loader) - 1
+                        ):
+                            logger.info(
+                                f"[valid] STEP: {j}/{len(valid_data_loader) - 1}, LOSS: {val_loss:.5f}"
+                            )
                     random_valid_sample = random.choice(val_samples)
                     generation_input = random_valid_sample[:10]
                     generation_input_string = tokenizer.decode(generation_input)
@@ -235,19 +262,16 @@ def main():
                     )
 
                 generation_output_string = tokenizer.decode(generation_output[0])
-                if (
-                    j % config["training"]["eval_print_every"] == 0
-                    or j == len(valid_data_loader) - 1
-                ):
-                    logger.info(
-                        f"[valid] STEP: {j}/{len(valid_data_loader) - 1}, LOSS: {loss}"
-                    )
-                    logger.info(f"Input: {generation_input_string}")
-                    logger.info(f"Output: {generation_output_string}")
+                avg_val_loss = sum(val_losses) / len(val_losses)
+                logger.info(f"[valid] AVG_LOSS: {avg_val_loss:.5f}")
+                logger.info(f"Input: {generation_input_string}")
+                logger.info(f"Output: {generation_output_string}")
+
+                # wandb log
                 if dist.get_rank() == 0:
                     table_data.append(
                         [
-                            config["training"]["current_step"],
+                            curr_step,
                             generation_input_string,
                             generation_output_string,
                         ]
@@ -255,34 +279,25 @@ def main():
                     table = wandb.Table(
                         columns=["step", "input", "output"], data=table_data
                     )
-                    # logger.info("=" * 100)
-                    # logger.info("=" * 100)
-
                     wandb.log(
                         data={
                             "val_loss": val_loss,
                             "val_ppl": math.exp(val_loss),
                             "generation": table,
                         },
-                        step=config["training"]["current_step"],
+                        step=curr_step,
                     )
-                    # model.save_pretrained(
-                    #     f"{config['training']['save_path']}/"
-                    #     f"{config['training']['exp_name']}/"
-                    #     f"steps={config['training']['current_step']}-val-loss={round(val_loss, 5)}",
-                    # )
-                # val_loss_tensor = torch.tensor(val_loss).cuda()
-                # dist.all_reduce(val_loss_tensor, op=dist.ReduceOp.SUM)
-                # dist.barrier()
-                # val_loss_tensor /= dist.get_world_size()
-
+                engine.module.train()
+            if (curr_step + 1) % config["training"][
+                "save_interval"
+            ] == 0 or curr_step == config["training"]["total_step"] - 1:
                 dist.barrier()
                 engine.save_checkpoint(
                     save_dir=os.path.join(config["training"]["save_path"], exp_name),
-                    client_state={"step": config["training"]["current_step"]},
+                    client_state={"step": curr_step},
                 )
-                torch.cuda.empty_cache()
-            config["training"]["current_step"] += 1
+            curr_step += 1
+            get_accelerator().empty_cache()
 
 
 if __name__ == "__main__":

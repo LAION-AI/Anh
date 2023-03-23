@@ -5,18 +5,22 @@
         "project": "laion-instruct",
         # experiment name
         "exp_name": "xglm-7.5B",
-        # Start step. if you want to retrain a model, set the step number of the checkpoint.
-        "current_step": 0,
         # Total number of training steps.
-        "total_step": 300000,
+        "total_step": 100000,
         # Random seed value.
         "seed": 42,
         # Model save path
         "save_path": "/fsx/ryan/project/laion/Anh/ahn/result",
+        # resume checkpoint path
+        "resume_from_checkpoint": '/fsx/ryan/project/laion/Anh/ahn/result/xglm-7.5B-230322-1541',
+        # Save interval
+        "save_interval": 1000,
         # Evaluation interval
-        "train_print_every": 10,
-        "eval_print_every": 20,
         "eval_interval": 1000,
+        # Training print interval
+        "train_print_interval": 10,
+        # Eval print interval
+        "eval_print_interval": 10,
     },
     "model_and_tokenizer": {
         # Pretrained model name or path.
@@ -87,14 +91,17 @@
             "stage": 3,
             "offload_param": {
                 "device": "cpu",
+                "pin_memory": true,
             },
             "offload_optimizer": {
                 "device": "cpu",
+                "pin_memory": true,
             },
             "allgather_partitions": True,
             "overlap_comm": True,
             "reduce_scatter": True,
             "contiguous_gradients": True,
+            # "gather_16bit_weights_on_model_save": true,
         },
         # Whether to allow untested optimizer.
         "zero_allow_untested_optimizer": True,
