@@ -6,8 +6,9 @@
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:8
 #SBATCH --cpus-per-task=4
-#SBATCH --time=12:00:00
+#SBATCH --time=14-0:00
 #SBATCH --mail-type=END
+#SBATCH --requeue
 #SBATCH --output=/fsx/ryan/project/laion/Anh/ahn/logs/slurm-%j.out
 
 source /fsx/ryan/miniconda3/bin/activate eleuther

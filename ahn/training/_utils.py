@@ -28,12 +28,13 @@ def rgetattr(obj, attr, *args):
 def default_setup():
     os.environ["TOKENIZERS_PARALLELISM"] = "true"
     logging.getLogger("transformers").setLevel(logging.ERROR)
+    torch.cuda.set_device(dist.get_rank())
     if not dist.is_initialized():
         dist.init_process_group(backend="nccl")
-    torch.cuda.set_device(dist.get_rank())
 
 
 def default_setup_deepspeed():
+    import deepspeed
     os.environ["TOKENIZERS_PARALLELISM"] = "true"
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
@@ -46,9 +47,9 @@ def default_setup_deepspeed():
     else:
         datasets.utils.logging.set_verbosity_error()
         transformers.utils.logging.set_verbosity_error()
-    if not dist.is_initialized():
-        dist.init_process_group(backend="nccl")
     torch.cuda.set_device(dist.get_rank())
+    if not dist.is_initialized():
+        deepspeed.init_distributed(dist_backend="nccl", verbose=False)
 
 
 def add_tokens(tokenizer, model, tokens):

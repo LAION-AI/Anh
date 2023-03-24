@@ -132,11 +132,12 @@ def main():
             f"Try resuming checkpoint from {config['training']['resume_from_checkpoint']}"
         )
         try:
-            _, client_state = engine.load_checkpoint(
+            load_path, client_state = engine.load_checkpoint(
                 config["training"]["resume_from_checkpoint"],
                 load_optimizer_states=True,
                 load_lr_scheduler_states=True,
             )
+            logger.info(f"Loaded checkpoint successfully from {load_path}", main_process_only=False)
             save_dir = config["training"]["resume_from_checkpoint"].split("/")[-1]
             logger.info(f"Resuming save_dir to {save_dir}")
             if client_state.get("step") and client_state["step"] > 0:
@@ -157,7 +158,7 @@ def main():
                     f"Resuming resume_step to {config['training']['resume_step']}"
                 )
         except Exception as e:
-            logger.info(f"Failed to resume checkpoint with error: {e}")
+            logger.info(f"Failed to load checkpoint with error: {e}")
     else:
         config["training"]["resume_step"] = 0
 
