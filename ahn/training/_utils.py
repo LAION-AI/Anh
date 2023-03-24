@@ -1,11 +1,14 @@
 import functools
 import logging
+from datetime import datetime
 import os
 from itertools import chain
 
 import numpy as np
 import torch
 import torch.distributed as dist
+from accelerate import Accelerator
+import datasets
 import transformers
 from torch.utils.data import Dataset, Sampler
 
@@ -25,8 +28,29 @@ def rgetattr(obj, attr, *args):
 def default_setup():
     os.environ["TOKENIZERS_PARALLELISM"] = "true"
     logging.getLogger("transformers").setLevel(logging.ERROR)
-    dist.init_process_group(backend="nccl")
     torch.cuda.set_device(dist.get_rank())
+    if not dist.is_initialized():
+        dist.init_process_group(backend="nccl")
+
+
+def default_setup_deepspeed():
+    import deepspeed
+
+    os.environ["TOKENIZERS_PARALLELISM"] = "true"
+    logging.basicConfig(
+        format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+        datefmt="%m/%d/%Y %H:%M:%S",
+        level=logging.INFO,
+    )
+    if Accelerator().is_local_main_process:
+        datasets.utils.logging.set_verbosity_warning()
+        transformers.utils.logging.set_verbosity_info()
+    else:
+        datasets.utils.logging.set_verbosity_error()
+        transformers.utils.logging.set_verbosity_error()
+    torch.cuda.set_device(dist.get_rank())
+    if not dist.is_initialized():
+        deepspeed.init_distributed(dist_backend="nccl", verbose=False)
 
 
 def add_tokens(tokenizer, model, tokens):
@@ -143,3 +167,13 @@ def fuse_gelu_megatron(model):
                 rsetattr(model, name, fused_gelu_module)
 
     return model
+
+
+def get_timestamp():
+    now = datetime.now()
+    return now.strftime("%y%m%d-%H%M")
+
+
+def print_rank0(msg):
+    if dist.get_rank() == 0:
+        print(msg)

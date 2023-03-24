@@ -1,0 +1,90 @@
+{
+    "training": {
+        # project name
+        "project": "example",
+        # experiment name
+        "exp_name": "xglm-230314",
+        # Start step. if you want to retrain a model, set the step number of the checkpoint.
+        "current_step": 0,
+        # Total number of training steps.
+        "total_step": 300000,
+        # Random seed value.
+        "seed": 42,
+        # Model save path
+        "save_path": "/fsx/kevin.ai/laion/Anh/result",
+        # Evaluation interval
+        "eval_interval": 1000,
+    },
+    "model_and_tokenizer": {
+        # Pretrained model name or path.
+        "pretrained_model_name": "EleutherAI/pythia-1.4b-deduped",
+        # Pretrained model type
+        "pretrained_model_type": "AutoModelForCausalLM",
+        # Pretrained tokenizer name or path.
+        "pretrained_tokenizer_name": "EleutherAI/pythia-1.4b-deduped",
+        # Pretrained tokenizer type
+        "pretrained_tokenizer_type": "AutoTokenizer",
+        # Model input names
+        "model_input_names": ["input_ids", "attention_mask"],
+        # Maximum length of input sequence.
+        "max_length": 2048,
+        # Cache directory for hugging face.
+        "cache_dir": "/fsx/kevin.ai/laion/tmp",
+        # Low CPU memory usage mode.
+        "low_cpu_mem_usage": False,
+    },
+    "data": {
+        # Path to training data.
+        "train_data_path": "/fsx/kevin.ai/laion/Anh/data/train.jsonl",
+        # Path to validation data.
+        "valid_data_path": "/fsx/kevin.ai/laion/Anh/data/test.jsonl",
+        # Special tokens for the model.
+        "special_tokens":[]
+    },
+    "efficiency": {
+        # Whether to use gradient checkpointing to save memory.
+        "gradient_checkpointing": True,
+        # Whether to fuse activation function to reduce time consumption by elementwise operations.
+        "activation_fusion": True,
+        # Whether to use smart batching to reduce time consumption by padding.
+        "smart_batching": True,
+        # Whether to use tensor cores to reduce time consumption by matrix operations.
+        # Available only on Ampere GPU (A10, A40, A100, ...).
+        "allow_tf32": True,
+    },
+    "deepspeed": {
+        # Training micro batch size per GPU.
+        "train_micro_batch_size_per_gpu": 16,
+        # Optimizer related settings.
+        "optimizer": {
+            "type": "Adam",
+            "params": {
+                "lr": 3.0e-5,
+                "weight_decay": 3.0e-7,
+            },
+        },
+        # BF16 Mixed precision related settings.
+        # Available only on Ampere GPU (A10, A40, A100, ...).
+        "bf16": {
+            "enable": True,
+        },
+        # Fp16 Mixed precision related settings.
+        "fp16": {
+            "enabled": False,
+        },
+        # ZeRO optimization related settings.
+        "zero_optimization": {
+            "stage": 1,
+            "allgather_partitions": True,
+            "overlap_comm": True,
+            "reduce_scatter": True,
+            "contiguous_gradients": True,
+        },
+        # Whether to allow untested optimizer.
+        "zero_allow_untested_optimizer": True,
+        # Whether to print wall clock breakdown.
+        "wall_clock_breakdown": False,
+        # Number of steps to print deepspeed log.
+        "steps_per_print": 1000,
+    },
+}

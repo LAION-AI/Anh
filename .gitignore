@@ -399,3 +399,10 @@ wandb/
 
 # ignore run log files
 **/nohup.out
+
+# ignore jsonl files
+**/*.jsonl
+
+**/hf_cache
+**/logs
+**/result
