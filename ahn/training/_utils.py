@@ -35,6 +35,7 @@ def default_setup():
 
 def default_setup_deepspeed():
     import deepspeed
+
     os.environ["TOKENIZERS_PARALLELISM"] = "true"
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",

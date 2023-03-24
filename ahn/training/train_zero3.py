@@ -137,7 +137,10 @@ def main():
                 load_optimizer_states=True,
                 load_lr_scheduler_states=True,
             )
-            logger.info(f"Loaded checkpoint successfully from {load_path}", main_process_only=False)
+            logger.info(
+                f"Loaded checkpoint successfully from {load_path}",
+                main_process_only=False,
+            )
             save_dir = config["training"]["resume_from_checkpoint"].split("/")[-1]
             logger.info(f"Resuming save_dir to {save_dir}")
             if client_state.get("step") and client_state["step"] > 0:
