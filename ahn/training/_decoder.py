@@ -72,7 +72,7 @@ def get_data_loader_hfstyle(config, tokenizer, split):
         result = tokenizer(
             examples[config["data"]["train_data_key"]],
             padding=False,
-            truncation=False,
+            truncation=True,
             max_length=config["model_and_tokenizer"]["max_length"],
             return_attention_mask=False,
             return_token_type_ids=False,

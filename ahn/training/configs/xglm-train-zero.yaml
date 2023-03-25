@@ -8,7 +8,7 @@
         # If epochs set, total_step will be ignored.
         "epochs": 2,
         # Total number of training steps.
-        "total_step": 15000,
+        "total_step": 7500,
         # Random seed value.
         "seed": 42,
         # Model save path
@@ -103,6 +103,7 @@
             "overlap_comm": True,
             "reduce_scatter": True,
             "contiguous_gradients": True,
+            # "round_robin_gradients": True,
             # "gather_16bit_weights_on_model_save": true,
         },
         # Whether to allow untested optimizer.

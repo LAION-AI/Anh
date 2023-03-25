@@ -29,21 +29,21 @@ logger = get_logger(__name__)
 
 
 def main():
-    # 1. Default setup for multi-gpu training
-    default_setup_deepspeed()
-
-    # 2. Get config path
+    # 1. Get config path
     parser = ArgumentParser()
     parser.add_argument("--config", "-c", type=str, required=True)
     parser.add_argument("--local_rank", type=int, default=0)
-    config_path = parser.parse_args().config
+    args = parser.parse_args()
+    config_path = args.config
+
+    # 2. Default setup for multi-gpu training
+    default_setup_deepspeed(args.local_rank)
 
     # 3. Load config and set seed
     with open(config_path, "r") as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
         logger.info(json.dumps(config, indent=2))
         set_seed(config["training"]["seed"])
-
     # 4. Get data loading and train functions
     model_type = config["model_and_tokenizer"]["pretrained_model_type"]
     if "causal" in model_type.lower():
@@ -61,8 +61,15 @@ def main():
 
     # sync all processes for the same exp_name
     dist.barrier()
-    exp_name = f'{config["training"]["exp_name"]}-{get_timestamp()}'
-    save_dir = exp_name
+    timestamp = get_timestamp()
+    jobid = os.environ["SLURM_JOBID"]
+    exp_name = f'{config["training"]["exp_name"]}-{jobid}-{timestamp}'
+    world_size = dist.get_world_size()
+    batch_size_per_gpu = config["deepspeed"]["train_micro_batch_size_per_gpu"]
+    zero_stage = config["deepspeed"]["zero_optimization"]["stage"]
+    project = f'{config["training"]["project"]}-zero{zero_stage}-ngpus{world_size}-bspg{batch_size_per_gpu}'
+    logger.info(f"Project name: {project}")
+    save_dir = project
 
     # 5. Load tokenizer
     logger.info("Loading tokenizer...")
@@ -103,9 +110,26 @@ def main():
     # 10. Load dataloaders
     logger.info("Loading train data loaders...")
     train_data_loader = get_data_loader_hfstyle(config, tokenizer, "train")
+    logger.info(f"Train data loader length: {len(train_data_loader)}")
+    # avg_length, max_length = 0, 0
+    # for sample in train_data_loader.dataset:
+    #     avg_length += len(sample["tokens"])
+    #     max_length = max(max_length, len(sample["tokens"]))
+    # avg_length = avg_length / len(train_data_loader.dataset)
+    # logger.info(f"Average length of tokens in train dataset: {avg_length:.1f}")
+    # logger.info(f"Max length of tokens in train dataset: {max_length:.1f}")
+
     logger.info("Loading valid data loaders...")
     valid_data_loader = get_data_loader_hfstyle(config, tokenizer, "valid")
-
+    logger.info(f"Valid data loader length: {len(valid_data_loader)}")
+    # avg_length, max_length = 0, 0
+    # for sample in valid_data_loader.dataset:
+    #     avg_length += len(sample["tokens"])
+    #     max_length = max(max_length, len(sample["tokens"]))
+    # avg_length = avg_length / len(valid_data_loader.dataset)
+    # logger.info(f"Average length of tokens in valid dataset: {avg_length:.1f}")
+    # logger.info(f"Max length of tokens in valid dataset: {max_length:.1f}")
+    
     # 11. Setup gradient checkpointing
     if config["efficiency"]["gradient_checkpointing"]:
         model.gradient_checkpointing_enable()
@@ -163,18 +187,20 @@ def main():
         except Exception as e:
             logger.info(f"Failed to load checkpoint with error: {e}")
     else:
-        config["training"]["resume_step"] = 0
+        config["training"]["resume_step"] = -1
 
     # 15. Setup wandb monitoring
-    # this is for time sync
+    logger.info(f"Project name: {project}")
     logger.info(f"Experiment name: {exp_name}")
     if dist.get_rank() == 0:
         wandb.init(
-            project=config["training"]["project"],
+            project=project,
             name=exp_name,
         )
 
     table_data = []
+    if config["training"].get("epochs"):
+        config["training"]["total_step"] = len(train_data_loader) * config["training"]["epochs"]
     if config.get("debug"):
         config["training"]["total_step"] = len(train_data_loader) + 3
         config["training"]["eval_interval"] = len(train_data_loader)
@@ -183,55 +209,81 @@ def main():
         config["training"]["save_interval"] = config["training"]["eval_interval"]
 
     # make sure save_interval is larger than or equal to eval_interval and make it a multiple of eval_interval
-    config["training"]["save_interval"] = max(
-        config["training"]["eval_interval"]
-        * int(
-            config["training"]["save_interval"] / config["training"]["eval_interval"]
-        ),
-        config["training"]["eval_interval"],
-    )
+    # config["training"]["save_interval"] = max(
+    #     config["training"]["eval_interval"]
+    #     * int(
+    #         config["training"]["save_interval"] / config["training"]["eval_interval"]
+    #     ),
+    #     config["training"]["eval_interval"],
+    # )
+    # final config for training
+    logger.info(f'TOTAL TRAINING STEPS: {config["training"]["total_step"]}')
 
     # 16. Start training
     curr_step = 0
+    fail_count = 0
     train_losses = []
     engine.module.train()
     while True:
         if curr_step >= config["training"]["total_step"]:
             break
-        for train_data in train_data_loader:
+        for i, train_data in enumerate(train_data_loader):
             if curr_step <= config["training"]["resume_step"]:
                 curr_step += 1
                 continue
-            train_loss = engine(
-                **{
-                    k: v.cuda() if torch.is_tensor(v) else v
-                    for k, v in train_data.items()
-                }
-            ).loss
-            train_losses.append(train_loss.item())
+            try:
+                train_loss = engine(
+                    **{
+                        k: v.cuda() if torch.is_tensor(v) else v
+                        for k, v in train_data.items()
+                    }
+                ).loss
+                train_losses.append(train_loss.item())
 
-            if (
-                curr_step % config["training"]["train_print_interval"] == 0
-                or curr_step == len(train_data_loader) - 1
+                if (
+                    curr_step % config["training"]["train_print_interval"] == 0
+                    or curr_step == len(train_data_loader) - 1
+                    or curr_step == config["training"]["total_step"] - 1
+                ):
+                    avg_train_loss = sum(train_losses) / len(train_losses)
+                    logger.info(
+                        f"[train] EPOCH: {(curr_step + 1)/len(train_data_loader):.3f} "
+                        f"STEP: {curr_step}/{config['training']['total_step']} ({i}/{len(train_data_loader) - 1}) "
+                        f"LOSS: {avg_train_loss:.5f}"
+                    )
+                    train_losses = []
+                if dist.get_rank() == 0:
+                    wandb.log(
+                        data={
+                            "train_loss": train_loss.item(),
+                            "train_ppl": math.exp(train_loss.item()),
+                        },
+                        step=curr_step,
+                    )
+                engine.backward(train_loss)
+                engine.step()
+                fail_count = 0
+            except Exception as e:
+                logger.info(f"Failed to train with error: {e}")
+                logger.info(
+                    f"[train FAIL] STEP: {curr_step}/{config['training']['total_step']} "
+                    f"INPUT_IDS_LENGTH: {len(train_data['input_ids'][0])}"
+                )
+                if fail_count >= 10:
+                    logger.info("Too many failures, aborting")
+                    return
+                fail_count += 1
+            get_accelerator().empty_cache()
+
+            if curr_step > 0 and (
+                curr_step % config["training"]["save_interval"] == 0
                 or curr_step == config["training"]["total_step"] - 1
             ):
-                avg_train_loss = sum(train_losses) / len(train_losses)
-                logger.info(
-                    f"[train] EPOCH: {(curr_step + 1)/len(train_data_loader):.3f} "
-                    f"STEP: {curr_step}/{config['training']['total_step']}, LOSS: {avg_train_loss:.5f}"
+                dist.barrier()
+                engine.save_checkpoint(
+                    save_dir=os.path.join(config["training"]["save_path"], save_dir),
+                    client_state={"step": curr_step},
                 )
-                train_losses = []
-            if dist.get_rank() == 0:
-                wandb.log(
-                    data={
-                        "train_loss": train_loss.item(),
-                        "train_ppl": math.exp(train_loss.item()),
-                    },
-                    step=curr_step,
-                )
-
-            engine.backward(train_loss)
-            engine.step()
 
             if curr_step > 0 and (
                 curr_step % config["training"]["eval_interval"] == 0
@@ -245,19 +297,26 @@ def main():
                     for j, valid_data in enumerate(valid_data_loader):
                         random_valid_sample = random.choice(valid_data["input_ids"])
                         val_samples.append(random_valid_sample)
-                        val_loss = engine(
-                            **{
-                                k: v.cuda() if torch.is_tensor(v) else v
-                                for k, v in valid_data.items()
-                            }
-                        ).loss
-                        val_losses.append(val_loss.item())
-                        if (
-                            j % config["training"]["train_print_interval"] == 0
-                            or j == len(valid_data_loader) - 1
-                        ):
+                        try:
+                            val_loss = engine(
+                                **{
+                                    k: v.cuda() if torch.is_tensor(v) else v
+                                    for k, v in valid_data.items()
+                                }
+                            ).loss
+                            val_losses.append(val_loss.item())
+                            if (
+                                j % config["training"]["train_print_interval"] == 0
+                                or j == len(valid_data_loader) - 1
+                            ):
+                                logger.info(
+                                    f"[valid] STEP: {j}/{len(valid_data_loader) - 1}, LOSS: {val_loss:.5f}"
+                                )
+                        except Exception as e:
+                            logger.info(f"Failed to validate with error: {e}")
                             logger.info(
-                                f"[valid] STEP: {j}/{len(valid_data_loader) - 1}, LOSS: {val_loss:.5f}"
+                                f"[valid FAIL] STEP: {j}/{len(valid_data_loader) - 1} "
+                                f"INPUT_IDS_LENGTH: {len(valid_data['input_ids'])}"
                             )
                     random_valid_sample = random.choice(val_samples)
                     generation_input = random_valid_sample[:10]
@@ -299,16 +358,8 @@ def main():
                         },
                         step=curr_step,
                     )
-                engine.module.train()
-            if curr_step > 0 and (
-                curr_step % config["training"]["save_interval"] == 0
-                or curr_step == config["training"]["total_step"] - 1
-            ):
                 dist.barrier()
-                engine.save_checkpoint(
-                    save_dir=os.path.join(config["training"]["save_path"], save_dir),
-                    client_state={"step": curr_step},
-                )
+                engine.module.train()
             curr_step += 1
             get_accelerator().empty_cache()
 
