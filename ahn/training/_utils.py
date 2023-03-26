@@ -3,7 +3,6 @@ import logging
 from datetime import datetime
 import os
 from itertools import chain
-
 import numpy as np
 import torch
 import torch.distributed as dist
@@ -25,21 +24,23 @@ def rgetattr(obj, attr, *args):
     return functools.reduce(_getattr, [obj] + attr.split("."))
 
 
-def default_setup():
+def default_setup(local_rank=None):
     os.environ["TOKENIZERS_PARALLELISM"] = "true"
     logging.getLogger("transformers").setLevel(logging.ERROR)
-    torch.cuda.set_device(dist.get_rank())
     if not dist.is_initialized():
         dist.init_process_group(backend="nccl")
+    rank = dist.get_rank() if local_rank is None else local_rank
+    torch.cuda.set_device(rank)
 
 
-def default_setup_deepspeed():
+def default_setup_deepspeed(local_rank=None):
     import deepspeed
 
     os.environ["TOKENIZERS_PARALLELISM"] = "true"
+    os.environ['TRANSFORMERS_NO_ADVISORY_WARNINGS'] = 'true'
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
-        datefmt="%m/%d/%Y %H:%M:%S",
+        datefmt="%Y-%m-%d %H:%M:%S",
         level=logging.INFO,
     )
     if Accelerator().is_local_main_process:
@@ -48,9 +49,10 @@ def default_setup_deepspeed():
     else:
         datasets.utils.logging.set_verbosity_error()
         transformers.utils.logging.set_verbosity_error()
-    torch.cuda.set_device(dist.get_rank())
     if not dist.is_initialized():
         deepspeed.init_distributed(dist_backend="nccl", verbose=False)
+    rank = dist.get_rank() if local_rank is None else local_rank
+    torch.cuda.set_device(rank)
 
 
 def add_tokens(tokenizer, model, tokens):
