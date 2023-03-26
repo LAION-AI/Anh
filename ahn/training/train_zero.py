@@ -235,7 +235,11 @@ def main():
     # if debug mode is on, we will set total_step to len(train_data_loader) + 7
     # and eval_interval to len(train_data_loader)
     if config.get("debug"):
-        config["training"]["total_step"] = len(train_data_loader) + 7
+        config["training"]["total_step"] = (
+            len(train_data_loader) + 3 
+            if config["training"]["resume_step"] == 0 
+            else config["training"]["resume_step"] + 3
+        )
         config["training"]["eval_interval"] = len(train_data_loader)
 
     logger.info(f'TOTAL TRAINING STEPS: {config["training"]["total_step"]}')
@@ -319,7 +323,7 @@ def main():
                             ).loss
                             val_losses.append(val_loss.item())
                             if (
-                                (j + 1) % config["training"]["train_print_interval"] == 0
+                                (j + 1) % config["training"]["eval_print_interval"] == 0
                                 or j == len(valid_data_loader) - 1
                             ):
                                 logger.info(
@@ -345,10 +349,6 @@ def main():
                         )
 
                     generation_output_string = tokenizer.decode(generation_output[0])
-                    avg_val_loss = sum(val_losses) / len(val_losses)
-                    logger.info(f"[valid] AVG_LOSS: {avg_val_loss:.5f}")
-                    logger.info(f"Input: {generation_input_string}")
-                    logger.info(f"Output: {generation_output_string}")
 
                     table_data.append(
                         [
@@ -357,6 +357,8 @@ def main():
                             generation_output_string,
                         ]
                     )
+                avg_val_loss = sum(val_losses) / len(val_losses)
+                logger.info(f"[valid] AVG_LOSS: {avg_val_loss:.5f}")
                 # wandb log
                 if dist.get_rank() == 0:
                     table = wandb.Table(
@@ -370,7 +372,6 @@ def main():
                         },
                         step=curr_step + 1,
                     )
-                table_data = []
                 dist.barrier()
                 engine.module.train()
 
