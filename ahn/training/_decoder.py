@@ -55,12 +55,15 @@ def tokenize(config, tokenizer, data, data_type):
 
 def get_data_loader_hfstyle(config, tokenizer, split):
     accelerator = Accelerator()
-    if os.path.exists(config["data"][f"{split}_dataset_path"]):
-        dataset = datasets.load_from_disk(config["data"][f"{split}_dataset_path"])
-    else:
+    if not os.path.exists(config["data"][f"{split}_dataset_path"]):
         dataset = datasets.load_dataset(
             "json", data_files=config["data"][f"{split}_data_path"], split="all"
         )
+        
+        def replace_whitespace(example):
+            for k, v in tokenizer.whitespace_tokens_map.items():
+                example[config["data"]["data_key"]] = example[config["data"]["data_key"]].replace(k, v)
+            return example
 
         def process_fn(examples):
             result = tokenizer(
@@ -73,13 +76,20 @@ def get_data_loader_hfstyle(config, tokenizer, split):
             )
             return result
 
-        with accelerator.main_process_first():
+        if accelerator.is_main_process:
+            if hasattr(tokenizer, 'whitespace_tokens_map'):
+                dataset = dataset.map(replace_whitespace, batched=False, desc="Replacing special tokens")
+
             dataset = dataset.map(
-                process_fn, batched=True, batch_size=1000, remove_columns=["metadata"]
+                process_fn, batched=True, batch_size=1000, remove_columns=["metadata"], desc="Tokenizing"
             )
-        dataset = dataset.rename_columns({"input_ids": "tokens", "text": "sentences"})
-        dataset.set_format("pt", columns=["tokens"], output_all_columns=True)
-        dataset.save_to_disk(config["data"][f"{split}_dataset_path"])
+
+            dataset = dataset.rename_columns({"input_ids": "tokens", "text": "sentences"})
+            dataset.set_format("pt", columns=["tokens"], output_all_columns=True)
+            dataset.save_to_disk(config["data"][f"{split}_dataset_path"])
+        dist.barrier()
+        
+    dataset = datasets.load_from_disk(config["data"][f"{split}_dataset_path"])
 
     if config.get("debug"):
         dataset = dataset.select(range(200))

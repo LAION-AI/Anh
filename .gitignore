@@ -407,4 +407,4 @@ wandb/
 **/logs
 **/result
 **/wandb.key
-**/*_dataset
+**/*_dataset*

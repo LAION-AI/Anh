@@ -2,6 +2,7 @@
 torchrun --nproc_per_node=8 train.py -c configs/example-230314.yaml
 """
 import os
+import re
 import math
 import json
 import random
@@ -17,10 +18,10 @@ from _factory import ModelFactory, TokenizerFactory
 from _utils import (
     default_setup_deepspeed,
     optimized_params,
-    add_tokens,
     fuse_gelu_megatron,
     get_timestamp,
 )
+from peft import get_peft_model, LoraConfig, TaskType
 from transformers import set_seed
 from deepspeed.accelerator import get_accelerator
 
@@ -59,6 +60,7 @@ def main():
         ] = "facebook/xglm-564M"
         config["model_and_tokenizer"]["pretrained_model_name"] = "facebook/xglm-564M"
 
+    # 5. Setup name for wandb and save config
     # sync all processes for the same exp_name
     dist.barrier()
     timestamp = get_timestamp()
@@ -71,7 +73,7 @@ def main():
     logger.info(f"Project name: {project}")
     logger.info(f"Experiment name: {exp_name}")
 
-    # 5. Load tokenizer
+    # 6. Load tokenizer
     logger.info("Loading tokenizer...")
     tokenizer = (
         TokenizerFactory()
@@ -83,7 +85,44 @@ def main():
     )
     tokenizer.model_input_names = config["model_and_tokenizer"]["model_input_names"]
 
-    # 7. Load model
+    # 7. Setup new tokens
+    if config["data"].get("special_tokens"):
+        tokenizer.add_special_tokens(config["data"]["special_tokens"])
+        logger.info(f"Added special tokens: {config['data']['special_tokens']}")
+    if config["data"].get("whitespace_tokens_map"):
+        white_space_tokens = [v for v in config["data"]["whitespace_tokens_map"].values()]
+        tokenizer.add_tokens(white_space_tokens)
+        tokenizer.whitespace_tokens_map = config["data"]["whitespace_tokens_map"]
+        logger.info(f"Added whitespace tokens: {white_space_tokens} with mapping: {tokenizer.whitespace_tokens_map}")
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    if tokenizer.pad_token_id is None:
+        tokenizer.pad_token_id = tokenizer.eos_token_id
+
+    # 8. Load dataloaders
+    logger.info("Loading train data loaders...")
+    train_data_loader = get_data_loader_hfstyle(config, tokenizer, "train")
+    logger.info(f"Train data loader length: {len(train_data_loader)}")
+    avg_length, max_length = 0, 0
+    for sample in train_data_loader.dataset:
+        avg_length += len(sample["tokens"])
+        max_length = max(max_length, len(sample["tokens"]))
+    avg_length = avg_length / len(train_data_loader.dataset)
+    logger.info(f"Average length of tokens in train dataset: {avg_length:.1f}")
+    logger.info(f"Max length of tokens in train dataset: {max_length:.1f}")
+
+    logger.info("Loading valid data loaders...")
+    valid_data_loader = get_data_loader_hfstyle(config, tokenizer, "valid")
+    logger.info(f"Valid data loader length: {len(valid_data_loader)}")
+    avg_length, max_length = 0, 0
+    for sample in valid_data_loader.dataset:
+        avg_length += len(sample["tokens"])
+        max_length = max(max_length, len(sample["tokens"]))
+    avg_length = avg_length / len(valid_data_loader.dataset)
+    logger.info(f"Average length of tokens in valid dataset: {avg_length:.1f}")
+    logger.info(f"Max length of tokens in valid dataset: {max_length:.1f}")
+
+    # 9. Load model
     logger.info("Loading model...")
     if os.path.exists(config["training"]["resume_from_checkpoint"]) and zero_stage != 3:
         with open(os.path.join(config["training"]["resume_from_checkpoint"], "latest"), "r") as f:
@@ -108,41 +147,25 @@ def main():
             use_auth_token=True,
         )
     )
+    model.resize_token_embeddings(len(tokenizer))
 
-    # 8. Fuse the efficient activation function
+    if config["training"].get("use_lora"):
+        peft_config = LoraConfig(
+            task_type=TaskType.CAUSAL_LM,
+            inference_mode=False,
+            r=8,
+            lora_alpha=32,
+            lora_dropout=0.1
+        )
+        model = get_peft_model(model, peft_config)
+        logger.info(f"Using Lora model")
+        if dist.get_rank() == 0:
+            model.print_trainable_parameters()
+
+    # 10. Fuse the efficient activation function
     if config["efficiency"]["activation_fusion"]:
         model = fuse_gelu_megatron(model)
 
-    # 9. Setup special tokens
-    tokenizer, model = add_tokens(tokenizer, model, config["data"]["special_tokens"])
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-    if tokenizer.pad_token_id is None:
-        tokenizer.pad_token_id = tokenizer.eos_token_id
-
-    # 10. Load dataloaders
-    logger.info("Loading train data loaders...")
-    train_data_loader = get_data_loader_hfstyle(config, tokenizer, "train")
-    logger.info(f"Train data loader length: {len(train_data_loader)}")
-    avg_length, max_length = 0, 0
-    for sample in train_data_loader.dataset:
-        avg_length += len(sample["tokens"])
-        max_length = max(max_length, len(sample["tokens"]))
-    avg_length = avg_length / len(train_data_loader.dataset)
-    logger.info(f"Average length of tokens in train dataset: {avg_length:.1f}")
-    logger.info(f"Max length of tokens in train dataset: {max_length:.1f}")
-
-    logger.info("Loading valid data loaders...")
-    valid_data_loader = get_data_loader_hfstyle(config, tokenizer, "valid")
-    logger.info(f"Valid data loader length: {len(valid_data_loader)}")
-    avg_length, max_length = 0, 0
-    for sample in valid_data_loader.dataset:
-        avg_length += len(sample["tokens"])
-        max_length = max(max_length, len(sample["tokens"]))
-    avg_length = avg_length / len(valid_data_loader.dataset)
-    logger.info(f"Average length of tokens in valid dataset: {avg_length:.1f}")
-    logger.info(f"Max length of tokens in valid dataset: {max_length:.1f}")
-    
     # 11. Setup gradient checkpointing
     if config["efficiency"]["gradient_checkpointing"]:
         model.gradient_checkpointing_enable()
@@ -313,6 +336,7 @@ def main():
                 table_data, val_losses = [], []
                 for j, valid_data in enumerate(valid_data_loader):
                     with torch.no_grad():
+                        # sample an instance from batch for text generation
                         random_valid_sample = random.choice(valid_data["input_ids"])
                         try:
                             val_loss = engine(
@@ -335,20 +359,32 @@ def main():
                                 f"[valid FAIL] STEP: {j + 1}/{len(valid_data_loader)} "
                                 f"INPUT_IDS_LENGTH: {len(valid_data['input_ids'])}"
                             )
-                        generation_input = random_valid_sample[:10]
+                        # text generation with after 'Assistant:' or first 10 tokens if 'Assistant:' is not found
+                        if random_valid_sample.find('Assistant:') >= 0:
+                            generation_input = random_valid_sample[random_valid_sample.find('Assistant:') + len('Assistant:'):]
+                        else:
+                            generation_input = random_valid_sample[:10]
                         generation_input_string = tokenizer.decode(generation_input)
                         generation_output = engine.module.generate(
                             input_ids=generation_input.unsqueeze(0).cuda(),
                             top_p=0.7,
                             num_beams=4,
-                            max_length=100,
+                            max_length=2048,
                             no_repeat_ngram_size=3,
                             synced_gpus=True,
                             early_stopping=True,
                             use_cache=True,
                         )
 
-                    generation_output_string = tokenizer.decode(generation_output[0])
+                    generation_output_string = tokenizer.decode(
+                        generation_output[0],
+                        skip_special_tokens=True,
+                    )
+                    if hasattr(tokenizer, 'whitespace_tokens_map'):
+                        for v in tokenizer.whitespace_tokens_map.values():
+                            generation_output_string = re.sub(rf'{v} (\w+)', rf'{v}\1', generation_output_string)
+                        for k, v in tokenizer.whitespace_tokens_map.items():
+                            generation_output_string = generation_output_string.replace(v, k)
 
                     table_data.append(
                         [
@@ -392,6 +428,7 @@ def main():
                         config["training"]["save_root_path"], project, f"global_step{curr_step + 1}"
                     )
                     model.save_pretrained(save_path, max_shard_size='200GB')
+                    tokenizer.save_pretrained(save_path)
                     logger.info(f"Saved model to {save_path}")
                     with open(os.path.join(
                         config["training"]["save_root_path"], project, "latest"
