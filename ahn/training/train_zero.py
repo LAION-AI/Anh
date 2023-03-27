@@ -369,7 +369,10 @@ def main():
                             )
                         # text generation with first 10 tokens as input
                         generation_input = random_valid_sample[:10]
-                        generation_input_string = tokenizer.decode(generation_input)
+                        generation_input_string = tokenizer.decode(
+                            generation_input,
+                            skip_special_tokens=True,
+                        )
                         generation_output = engine.module.generate(
                             input_ids=generation_input.unsqueeze(0).cuda(),
                             top_p=0.7,
@@ -388,13 +391,17 @@ def main():
                     if hasattr(tokenizer, "whitespace_tokens_map"):
                         for v in tokenizer.whitespace_tokens_map.values():
                             generation_output_string = re.sub(
-                                rf"{v} (\w+)", rf"{v}\1", generation_output_string
+                                rf"{v} (\S+)", rf"{v}\1", generation_output_string
                             )
                         for k, v in tokenizer.whitespace_tokens_map.items():
                             generation_output_string = generation_output_string.replace(
                                 v, k
                             )
-
+                    logger.info("*" * 50)
+                    logger.info(f"Sample Input:\n{generation_input_string}")
+                    logger.info("*" * 50)
+                    logger.info(f"Sample Output:\n{generation_output_string}")
+                    logger.info("*" * 50)
                     table_data.append(
                         [
                             curr_step + 1,
