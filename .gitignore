@@ -406,3 +406,5 @@ wandb/
 **/hf_cache
 **/logs
 **/result
+**/wandb.key
+**/*_dataset*

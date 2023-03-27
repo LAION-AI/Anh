@@ -5,14 +5,16 @@
         "project": "laion-instruct-xglm-7.5B",
         # experiment name
         "exp_name": "xglm-7.5B",
+        # If epochs set, total_step will be ignored.
+        "epochs": 3,
         # Total number of training steps.
-        "total_step": 100000,
+        "total_step": 15000,
         # Random seed value.
         "seed": 42,
         # Model save path
-        "save_path": "/fsx/ryan/project/laion/Anh/ahn/result",
+        "save_root_path": "/mnt/nvme/ryan01/Anh/ahn/result",
         # resume checkpoint path
-        "resume_from_checkpoint": '/fsx/ryan/project/laion/Anh/ahn/result/xglm-7.5B-230322-1541',
+        "resume_from_checkpoint": '/mnt/nvme/ryan01/Anh/ahn/result/laion-instruct-xglm-7.5B-zero2-ngpus8-bspg16',
         # Save interval
         "save_interval": 1000,
         # Evaluation interval
@@ -20,7 +22,7 @@
         # Training print interval
         "train_print_interval": 10,
         # Eval print interval
-        "eval_print_interval": 10,
+        "eval_print_interval": 1,
     },
     "model_and_tokenizer": {
         # Pretrained model name or path.
@@ -34,19 +36,21 @@
         # Model input names
         "model_input_names": ["input_ids", "attention_mask"],
         # Maximum length of input sequence.
-        "max_length": 4096,
+        "max_length": 512,
         # Cache directory for hugging face.
-        "cache_dir": "/fsx/ryan/project/laion/Anh/ahn/hf_cache",
+        "cache_dir": "/mnt/nvme/home/ryan01/.cache/huggingface/transformers",
         # Low CPU memory usage mode.
         "low_cpu_mem_usage": False,
     },
     "data": {
         # Path to training data.
-        "train_data_path": "/fsx/ryan/project/laion/Anh/data/train.jsonl",
-        "train_data_key": "text",
+        "train_data_path": "/mnt/nvme/ryan01/Anh/data/train_v2.jsonl",
+        "train_dataset_path": "/mnt/nvme/ryan01/Anh/data/train_dataset",
         # Path to validation data.
-        "valid_data_path": "/fsx/ryan/project/laion/Anh/data/test.jsonl",
-        "valid_data_key": "text",
+        "valid_data_path": "/mnt/nvme/ryan01/Anh/data/test_v2.jsonl",
+        "valid_dataset_path": "/mnt/nvme/ryan01/Anh/data/valid_dataset",
+        # Data Key for sentences
+        "data_key": "text",
         # Special tokens for the model.
         "special_tokens":[]
     },
@@ -63,7 +67,7 @@
     },
     "deepspeed": {
         # Training micro batch size per GPU.
-        "train_micro_batch_size_per_gpu": 2,
+        "train_micro_batch_size_per_gpu": 16,
         # Optimizer related settings.
         "optimizer": {
             "type": "Adam",
@@ -88,11 +92,11 @@
         # },
         # ZeRO optimization related settings.
         "zero_optimization": {
-            "stage": 3,
-            "offload_param": {
-                "device": "cpu",
-                "pin_memory": true,
-            },
+            "stage": 2,
+        #     "offload_param": {
+        #         "device": "cpu",
+        #         "pin_memory": true,
+        #     },
             "offload_optimizer": {
                 "device": "cpu",
                 "pin_memory": true,
@@ -101,6 +105,7 @@
             "overlap_comm": True,
             "reduce_scatter": True,
             "contiguous_gradients": True,
+            "round_robin_gradients": True,
             # "gather_16bit_weights_on_model_save": true,
         },
         # Whether to allow untested optimizer.

@@ -1,0 +1,8 @@
+accelerate
+catalyst
+datasets
+deepspeed
+jsonlines
+torch
+transformers
+wandb
