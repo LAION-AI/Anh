@@ -90,10 +90,14 @@ def main():
         tokenizer.add_special_tokens(config["data"]["special_tokens"])
         logger.info(f"Added special tokens: {config['data']['special_tokens']}")
     if config["data"].get("whitespace_tokens_map"):
-        white_space_tokens = [v for v in config["data"]["whitespace_tokens_map"].values()]
+        white_space_tokens = [
+            v for v in config["data"]["whitespace_tokens_map"].values()
+        ]
         tokenizer.add_tokens(white_space_tokens)
         tokenizer.whitespace_tokens_map = config["data"]["whitespace_tokens_map"]
-        logger.info(f"Added whitespace tokens: {white_space_tokens} with mapping: {tokenizer.whitespace_tokens_map}")
+        logger.info(
+            f"Added whitespace tokens: {white_space_tokens} with mapping: {tokenizer.whitespace_tokens_map}"
+        )
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     if tokenizer.pad_token_id is None:
@@ -125,16 +129,18 @@ def main():
     # 9. Load model
     logger.info("Loading model...")
     if os.path.exists(config["training"]["resume_from_checkpoint"]) and zero_stage != 3:
-        with open(os.path.join(config["training"]["resume_from_checkpoint"], "latest"), "r") as f:
+        with open(
+            os.path.join(config["training"]["resume_from_checkpoint"], "latest"), "r"
+        ) as f:
             resume_step = int(f.readline().strip().replace("global_step", ""))
-            config['training']['resume_step'] = resume_step
-        checkpoint_path = os.path.join(config["training"]["resume_from_checkpoint"], f"global_step{resume_step}")
+            config["training"]["resume_step"] = resume_step
+        checkpoint_path = os.path.join(
+            config["training"]["resume_from_checkpoint"], f"global_step{resume_step}"
+        )
         logger.info(
             f"Try resuming checkpoint from {config['training']['resume_from_checkpoint']}"
         )
-        logger.info(
-            f"Resuming resume_step to {config['training']['resume_step']}"
-        )
+        logger.info(f"Resuming resume_step to {config['training']['resume_step']}")
     else:
         checkpoint_path = config["model_and_tokenizer"]["pretrained_model_name"]
     model = (
@@ -155,7 +161,7 @@ def main():
             inference_mode=False,
             r=8,
             lora_alpha=32,
-            lora_dropout=0.1
+            lora_dropout=0.1,
         )
         model = get_peft_model(model, peft_config)
         logger.info(f"Using Lora model")
@@ -245,28 +251,32 @@ def main():
 
     # if epoch is specified, we will calculate total_step based on epoch
     if config["training"].get("epochs"):
-        config["training"]["total_step"] = len(train_data_loader) * config["training"]["epochs"]
+        config["training"]["total_step"] = (
+            len(train_data_loader) * config["training"]["epochs"]
+        )
 
     # if save_interval is not specified, we will set it to eval_interval
     if not config["training"].get("save_interval"):
         config["training"]["save_interval"] = config["training"]["eval_interval"]
 
     # if model is not resumed from checkpoint, we will set resume_step to 0
-    if not config['training'].get("resume_step"):
+    if not config["training"].get("resume_step"):
         config["training"]["resume_step"] = 0
 
     # if debug mode is on, we will set total_step to len(train_data_loader) + 7
     # and eval_interval to len(train_data_loader)
     if config.get("debug"):
         config["training"]["total_step"] = (
-            len(train_data_loader) + 3 
-            if config["training"]["resume_step"] == 0 
+            len(train_data_loader) + 3
+            if config["training"]["resume_step"] == 0
             else config["training"]["resume_step"] + 3
         )
         config["training"]["eval_interval"] = len(train_data_loader)
 
     logger.info(f'TOTAL TRAINING STEPS: {config["training"]["total_step"]}')
-    logger.info(f'Training start after resume step: {config["training"]["resume_step"]}')
+    logger.info(
+        f'Training start after resume step: {config["training"]["resume_step"]}'
+    )
 
     # 16. Start training
     curr_step, fail_count = 0, 0
@@ -326,10 +336,9 @@ def main():
             get_accelerator().empty_cache()
 
             # validation every eval_interval steps or at the end of training
-            if (
-                (curr_step + 1) % config["training"]["eval_interval"] == 0
-                or curr_step == config["training"]["total_step"] - 1
-            ):
+            if (curr_step + 1) % config["training"][
+                "eval_interval"
+            ] == 0 or curr_step == config["training"]["total_step"] - 1:
                 engine.module.eval()
                 logger.info("Start Validation")
 
@@ -346,10 +355,9 @@ def main():
                                 }
                             ).loss
                             val_losses.append(val_loss.item())
-                            if (
-                                (j + 1) % config["training"]["eval_print_interval"] == 0
-                                or j == len(valid_data_loader) - 1
-                            ):
+                            if (j + 1) % config["training"][
+                                "eval_print_interval"
+                            ] == 0 or j == len(valid_data_loader) - 1:
                                 logger.info(
                                     f"[valid] STEP: {j + 1}/{len(valid_data_loader)}, LOSS: {val_loss:.5f}"
                                 )
@@ -360,8 +368,11 @@ def main():
                                 f"INPUT_IDS_LENGTH: {len(valid_data['input_ids'])}"
                             )
                         # text generation with after 'Assistant:' or first 10 tokens if 'Assistant:' is not found
-                        if random_valid_sample.find('Assistant:') >= 0:
-                            generation_input = random_valid_sample[random_valid_sample.find('Assistant:') + len('Assistant:'):]
+                        if random_valid_sample.find("Assistant:") >= 0:
+                            generation_input = random_valid_sample[
+                                random_valid_sample.find("Assistant:")
+                                + len("Assistant:") :
+                            ]
                         else:
                             generation_input = random_valid_sample[:10]
                         generation_input_string = tokenizer.decode(generation_input)
@@ -380,11 +391,15 @@ def main():
                         generation_output[0],
                         skip_special_tokens=True,
                     )
-                    if hasattr(tokenizer, 'whitespace_tokens_map'):
+                    if hasattr(tokenizer, "whitespace_tokens_map"):
                         for v in tokenizer.whitespace_tokens_map.values():
-                            generation_output_string = re.sub(rf'{v} (\w+)', rf'{v}\1', generation_output_string)
+                            generation_output_string = re.sub(
+                                rf"{v} (\w+)", rf"{v}\1", generation_output_string
+                            )
                         for k, v in tokenizer.whitespace_tokens_map.items():
-                            generation_output_string = generation_output_string.replace(v, k)
+                            generation_output_string = generation_output_string.replace(
+                                v, k
+                            )
 
                     table_data.append(
                         [
@@ -412,27 +427,33 @@ def main():
                 engine.module.train()
 
             # save model every save_interval steps or at the end of training
-            if (
-                (curr_step + 1) % config["training"]["save_interval"] == 0 
-                or curr_step == config["training"]["total_step"] - 1
-            ):
+            if (curr_step + 1) % config["training"][
+                "save_interval"
+            ] == 0 or curr_step == config["training"]["total_step"] - 1:
                 dist.barrier()
                 if zero_stage == 3:
                     engine.save_checkpoint(
-                        save_dir=os.path.join(config["training"]["save_root_path"], project),
+                        save_dir=os.path.join(
+                            config["training"]["save_root_path"], project
+                        ),
                         tag=f"global_step{curr_step + 1}",
                         client_state={"step": curr_step + 1},
                     )
                 elif dist.get_rank() == 0:
                     save_path = os.path.join(
-                        config["training"]["save_root_path"], project, f"global_step{curr_step + 1}"
+                        config["training"]["save_root_path"],
+                        project,
+                        f"global_step{curr_step + 1}",
                     )
-                    model.save_pretrained(save_path, max_shard_size='200GB')
+                    model.save_pretrained(save_path, max_shard_size="200GB")
                     tokenizer.save_pretrained(save_path)
                     logger.info(f"Saved model to {save_path}")
-                    with open(os.path.join(
-                        config["training"]["save_root_path"], project, "latest"
-                    ), 'w') as f:
+                    with open(
+                        os.path.join(
+                            config["training"]["save_root_path"], project, "latest"
+                        ),
+                        "w",
+                    ) as f:
                         f.write(f"global_step{curr_step + 1}")
                     logger.info(f"Update latest to global_step{curr_step + 1}")
                 dist.barrier()

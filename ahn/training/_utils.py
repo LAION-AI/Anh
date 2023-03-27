@@ -37,7 +37,7 @@ def default_setup_deepspeed(local_rank=None):
     import deepspeed
 
     os.environ["TOKENIZERS_PARALLELISM"] = "true"
-    os.environ['TRANSFORMERS_NO_ADVISORY_WARNINGS'] = 'true'
+    os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] = "true"
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",

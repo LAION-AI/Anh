@@ -1,8 +1,8 @@
-transformers
-datasets
 accelerate
 catalyst
-torch
-jsonlines
-wandb
+datasets
 deepspeed
+jsonlines
+torch
+transformers
+wandb

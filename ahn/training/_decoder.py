@@ -59,10 +59,12 @@ def get_data_loader_hfstyle(config, tokenizer, split):
         dataset = datasets.load_dataset(
             "json", data_files=config["data"][f"{split}_data_path"], split="all"
         )
-        
+
         def replace_whitespace(example):
             for k, v in tokenizer.whitespace_tokens_map.items():
-                example[config["data"]["data_key"]] = example[config["data"]["data_key"]].replace(k, v)
+                example[config["data"]["data_key"]] = example[
+                    config["data"]["data_key"]
+                ].replace(k, v)
             return example
 
         def process_fn(examples):
@@ -77,18 +79,26 @@ def get_data_loader_hfstyle(config, tokenizer, split):
             return result
 
         if accelerator.is_main_process:
-            if hasattr(tokenizer, 'whitespace_tokens_map'):
-                dataset = dataset.map(replace_whitespace, batched=False, desc="Replacing special tokens")
+            if hasattr(tokenizer, "whitespace_tokens_map"):
+                dataset = dataset.map(
+                    replace_whitespace, batched=False, desc="Replacing special tokens"
+                )
 
             dataset = dataset.map(
-                process_fn, batched=True, batch_size=1000, remove_columns=["metadata"], desc="Tokenizing"
+                process_fn,
+                batched=True,
+                batch_size=1000,
+                remove_columns=["metadata"],
+                desc="Tokenizing",
             )
 
-            dataset = dataset.rename_columns({"input_ids": "tokens", "text": "sentences"})
+            dataset = dataset.rename_columns(
+                {"input_ids": "tokens", "text": "sentences"}
+            )
             dataset.set_format("pt", columns=["tokens"], output_all_columns=True)
             dataset.save_to_disk(config["data"][f"{split}_dataset_path"])
         dist.barrier()
-        
+
     dataset = datasets.load_from_disk(config["data"][f"{split}_dataset_path"])
 
     if config.get("debug"):
