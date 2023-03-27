@@ -367,14 +367,8 @@ def main():
                                 f"[valid FAIL] STEP: {j + 1}/{len(valid_data_loader)} "
                                 f"INPUT_IDS_LENGTH: {len(valid_data['input_ids'])}"
                             )
-                        # text generation with after 'Assistant:' or first 10 tokens if 'Assistant:' is not found
-                        if random_valid_sample.find("Assistant:") >= 0:
-                            generation_input = random_valid_sample[
-                                random_valid_sample.find("Assistant:")
-                                + len("Assistant:") :
-                            ]
-                        else:
-                            generation_input = random_valid_sample[:10]
+                        # text generation with first 10 tokens as input
+                        generation_input = random_valid_sample[:10]
                         generation_input_string = tokenizer.decode(generation_input)
                         generation_output = engine.module.generate(
                             input_ids=generation_input.unsqueeze(0).cuda(),
