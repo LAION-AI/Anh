@@ -1,0 +1,118 @@
+{
+    "debug": False,
+    "training": {
+        # project name
+        "project": "laion-instruct-bloomz-1b1",
+        # experiment name
+        "exp_name": "bloomz-1b1",
+        # If epochs set, total_step will be ignored.
+        "epochs": 3,
+        # Total number of training steps.
+        "total_step": 15000,
+        # Random seed value.
+        "seed": 42,
+        # Model save path
+        "save_root_path": "/mnt/nvme/home/cahya/Work/laion/Anh/ahn/result",
+        # resume checkpoint path
+        "resume_from_checkpoint": '/mnt/nvme/home/cahya/Work/laion/Anh/ahn/result/laion-instruct-bloomz-1b1-zero2-ngpus8-bspg16',
+        # Save interval
+        "save_interval": 1000,
+        # Evaluation interval
+        "eval_interval": 1000,
+        # Training print interval
+        "train_print_interval": 10,
+        # Eval print interval
+        "eval_print_interval": 1,
+    },
+    "model_and_tokenizer": {
+        # Pretrained model name or path.
+        "pretrained_model_name": "bigscience/bloomz-1b1",
+        # Pretrained model type
+        "pretrained_model_type": "AutoModelForCausalLM",
+        # Pretrained tokenizer name or path.
+        "pretrained_tokenizer_name": "bigscience/bloomz-1b1",
+        # Pretrained tokenizer type
+        "pretrained_tokenizer_type": "AutoTokenizer",
+        # Model input names
+        "model_input_names": ["input_ids", "attention_mask"],
+        # Maximum length of input sequence.
+        "max_length": 512,
+        # Cache directory for hugging face.
+        "cache_dir": "/mnt/nvme/home/cahya/.cache/huggingface/transformers",
+        # Low CPU memory usage mode.
+        "low_cpu_mem_usage": False,
+    },
+    "data": {
+        # Path to training data.
+        "train_data_path": "/mnt/nvme/home/cahya/Work/laion/data/cross_lingual_train.jsonl",
+        "train_dataset_path": "/mnt/nvme/home/cahya/Work/laion/data/train_dataset",
+        # Path to validation data.
+        "valid_data_path": "/mnt/nvme/home/cahya/Work/laion/data/cross_lingual_validation.jsonl",
+        "valid_dataset_path": "/mnt/nvme/home/cahya/Work/laion/data/valid_dataset",
+        # Data Key for sentences
+        "data_key": "text",
+        # Special tokens for the model.
+        "special_tokens":[]
+    },
+    "efficiency": {
+        # Whether to use gradient checkpointing to save memory.
+        "gradient_checkpointing": True,
+        # Whether to fuse activation function to reduce time consumption by elementwise operations.
+        "activation_fusion": True,
+        # Whether to use smart batching to reduce time consumption by padding.
+        "smart_batching": True,
+        # Whether to use tensor cores to reduce time consumption by matrix operations.
+        # Available only on Ampere GPU (A10, A40, A100, ...).
+        "allow_tf32": True,
+    },
+    "deepspeed": {
+        # Training micro batch size per GPU.
+        "train_micro_batch_size_per_gpu": 16,
+        # Optimizer related settings.
+        "optimizer": {
+            "type": "Adam",
+            "params": {
+                "lr": 3.0e-5,
+                "weight_decay": 3.0e-7,
+            },
+        },
+        # BF16 Mixed precision related settings.
+        # Available only on Ampere GPU (A10, A40, A100, ...).
+        "bf16": {
+            "enable": True,
+        },
+        # Fp16 Mixed precision related settings.
+        "fp16": {
+            "enabled": False,
+        },
+        # "activation_checkpointing": {
+        #     # "partition_activations": True,
+        #     # "contiguous_memory_optimization": True,
+        #     "number_checkpoints": 8,
+        # },
+        # ZeRO optimization related settings.
+        "zero_optimization": {
+            "stage": 2,
+        #     "offload_param": {
+        #         "device": "cpu",
+        #         "pin_memory": true,
+        #     },
+            "offload_optimizer": {
+                "device": "cpu",
+                "pin_memory": true,
+            },
+            "allgather_partitions": True,
+            "overlap_comm": True,
+            "reduce_scatter": True,
+            "contiguous_gradients": True,
+            "round_robin_gradients": True,
+            # "gather_16bit_weights_on_model_save": true,
+        },
+        # Whether to allow untested optimizer.
+        "zero_allow_untested_optimizer": True,
+        # Whether to print wall clock breakdown.
+        "wall_clock_breakdown": False,
+        # Number of steps to print deepspeed log.
+        "steps_per_print": 1000,
+    },
+}
